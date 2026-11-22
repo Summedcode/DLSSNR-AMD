@@ -43,6 +43,7 @@
 # from 310.9.16 CC_SILVER_AARDWOLD.bin (CC_SILVER_AARDWOLD, which 310.9.16 also holds) and CC_SMALL_FP8.bin (CC_SMALL_FP8), from
 # 310.8.0 CC_SILVER_AARDWOLD.bin only. It only reads the weight data; the DLL is never loaded or run. The models are kept in
 # the package's dlssnr-amd\, so later installs from this package need no DLL.
+# -Model CC_SMALL_FP8 also accepts a verified CC_SMALL_FP8.bin there by itself.
 #
 # Every file put into the game folder is listed in dlssnr-amd-install.txt; existing files it would
 # overwrite are first moved to dlssnr-amd-backup\, and uninstall deletes ours and puts them back.
@@ -406,7 +407,10 @@ function Test-Sha([string]$path, [string]$sha) {
 $modelPath = Join-Path $here 'dlssnr-amd\CC_SILVER_AARDWOLD.bin'
 $smallPath = Join-Path $here 'dlssnr-amd\CC_SMALL_FP8.bin'
 $modelFrom = $modelPath; $smallFrom = $smallPath
-if (($Dll -and -not ((Test-Sha $modelPath $ModelSha) -and (Test-Sha $smallPath $SmallSha))) -or -not (Test-Path -LiteralPath $modelPath)) {
+$hasCachedLarge = Test-Path -LiteralPath $modelPath
+$smallOnly = -not $Dll -and $Model -eq 'CC_SMALL_FP8' -and -not $hasCachedLarge -and (Test-Path -LiteralPath $smallPath -PathType Leaf)
+$needsExtraction = ($Dll -and -not ((Test-Sha $modelPath $ModelSha) -and (Test-Sha $smallPath $SmallSha))) -or -not $hasCachedLarge
+if ($needsExtraction -and -not $smallOnly) {
     if (-not $Dll) {
         Say ''
         Say 'The package has no model. The first install needs NVIDIA''s nvngx_dlssnr.dll (310.9.16 - both models - or 310.8.0), or a zip that contains it.'
@@ -461,7 +465,7 @@ if (($Dll -and -not ((Test-Sha $modelPath $ModelSha) -and (Test-Sha $smallPath $
         Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
-if (-not (Test-Sha $modelFrom $ModelSha)) {
+if (-not $smallOnly -and -not (Test-Sha $modelFrom $ModelSha)) {
     Fail "$modelFrom is damaged or not this version's model. Delete it and install again with nvngx_dlssnr.dll."
 }
 if ((Test-Path -LiteralPath $smallPath) -and -not (Test-Sha $smallPath $SmallSha)) {
@@ -592,7 +596,7 @@ if ($haveExperimental -and $haveSmall) {
 if (-not $expModelFrom -and $Model -eq 'CC_SMALL_FP8_EXPERIMENTAL') { Say 'Games start with CC_SMALL_FP8 instead.'; $Model = 'CC_SMALL_FP8' }
 # CC_SILVER_AARDWOLD_OPTIMIZED's weights the same way, from CC_SILVER_AARDWOLD's model and the package's difference file.
 $optModelFrom = $null
-if ($haveOptimized) {
+if ($haveOptimized -and -not $smallOnly) {
     Say 'Making CC_SILVER_AARDWOLD_OPTIMIZED''s weights ...'
     $optSha = ((Get-Content -LiteralPath (Join-Path $here 'optimized\CC_SILVER_AARDWOLD_OPTIMIZED.bin.sha256') -Raw).Trim() -split '\s+')[0]
     $optModelFrom = Join-Path ([System.IO.Path]::GetTempPath()) ("dlssnr-optimized-$([guid]::NewGuid().ToString('N')).bin")
@@ -813,7 +817,16 @@ Record-Logs @('dlssnr-amd.ini')
 Say ''
 $style = if ($RenoDX -eq 'on') { 'RenoDX style' } else { 'wilsjo2 style' }
 Say "Installed the $Route route into: $game ($style)"
-Say "Networks installed: $(if ($haveSmall) { 'CC_SMALL_FP8, ' })$(if ($expModelFrom) { 'CC_SMALL_FP8_EXPERIMENTAL, ' })CC_SILVER_AARDWOLD$(if ($optModelFrom) { ', CC_SILVER_AARDWOLD_OPTIMIZED' + $(if (-not $int4ModelFrom) { ' (without its int4 layers)' }) }); games start with $Model."
+$installedNetworks = @(
+    if ($haveSmall) { 'CC_SMALL_FP8' }
+    if ($expModelFrom) { 'CC_SMALL_FP8_EXPERIMENTAL' }
+    if (-not $smallOnly) { 'CC_SILVER_AARDWOLD' }
+    if ($optModelFrom) {
+        if ($int4ModelFrom) { 'CC_SILVER_AARDWOLD_OPTIMIZED' }
+        else { 'CC_SILVER_AARDWOLD_OPTIMIZED (without its int4 layers)' }
+    }
+)
+Say "Networks installed: $($installedNetworks -join ', '); games start with $Model."
 Say "Switch the network in game at any time: the drop-down in $(if ($Route -eq 'optiscaler') { 'NR Control (End)' } else { 'ReShade''s Add-ons page' }), or Ctrl+F11 to cycle; settings: [Network] in dlssnr-amd.ini."
 Say 'The network runs as machine code made in advance by the ACO compiler (ACO Mode). When your driver cannot take it,'
 Say "$(if ($Route -eq 'optiscaler') { 'NR Control' } else { 'ReShade''s Add-ons page' }) and dlssnr-amd.log say why; an RX 9000 then runs the network compiled by the AMD driver"
